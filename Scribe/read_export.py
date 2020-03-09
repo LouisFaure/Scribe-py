@@ -7,6 +7,7 @@ AnnData object with n_obs × n_vars = 640 × 11
 '''
 from . import causal_network
 from . import logging as logg
+import scipy
 
 import pandas as pd
 import numpy as np
@@ -32,12 +33,15 @@ def load_anndata(anndata, is_scale=False):
     model =causal_network.causal_model()
     logg.info('Create causal_model successfully')
 
+    if scipy.sparse.issparse(anndata.X):
+        anndata.X = anndata.X.todense()
+
     order_exprs_mat = True
     if is_scale == False :
         expression_raw = anndata.X
     else:
         expression_raw = anndata.X._scale
-    df = pd.DataFrame(expression_raw.transpose(), index = anndata.var_names.tolist())
+    df = pd.DataFrame(expression_raw.transpose(), index = anndata.var.index)
     df.index.name = 'GENE_ID'
 
     if "dpt_groups" in anndata.obs_keys(): # if pseudotime and branch of the dataset is assigned by scanpy, use the following 
@@ -88,7 +92,7 @@ def load_anndata(anndata, is_scale=False):
         model.node_ids = expression_mat_.index.levels[0]
         model.run_ids = expression_mat_.index.levels[1]
     else:
-        model.node_ids = anndata.var_names.to_list()
+        model.node_ids = anndata.var.index
         model.run_ids = [0]
 
 
