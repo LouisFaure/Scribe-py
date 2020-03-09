@@ -1,5 +1,6 @@
 import scipy.spatial as ss
-from scipy.special import digamma,gamma
+from scipy.special import gamma
+from betaincder import digamma
 from sklearn.neighbors import KernelDensity
 from math import log,pi,exp
 import numpy.random as nr
@@ -157,14 +158,14 @@ def cmi(x_orig, y_orig, z_orig, normalization=False, k=5):
     data_yz = np.concatenate((y, z), axis=1)
 
 
-    tree_xyz = ss.cKDTree(data_xyz)
-    tree_xz = ss.cKDTree(data_xz)
-    tree_yz = ss.cKDTree(data_yz)
-    tree_z = ss.cKDTree(z)
+    tree_xyz = ss.cKDTree(data_xyz,balanced_tree=False)
+    tree_xz = ss.cKDTree(data_xz,balanced_tree=False)
+    tree_yz = ss.cKDTree(data_yz,balanced_tree=False)
+    tree_z = ss.cKDTree(z,balanced_tree=False)
 
-    knn_dis = [tree_xyz.query(point, k + 1, p=np.inf)[0][k] for point in data_xyz]
-    # knn_dis = tree_xyz.query(data_xyz, k + 1, p=np.inf)[0][k]
-    information_samples = [0 for i in range(N)]
+    # knn_dis = [tree_xyz.query(point, k + 1, p=np.inf)[0][k] for point in data_xyz]
+    knn_dis = tree_xyz.query(data_xyz, k + 1, p=np.inf)[0][:,k]
+    information_samples = np.zeros(N)
     for i in range(N):
         information_samples[i] += digamma(len(tree_xyz.query_ball_point(data_xyz[i], knn_dis[i], p=np.inf)) -1)
         information_samples[i] += -digamma(len(tree_xz.query_ball_point(data_xz[i], knn_dis[i], p=np.inf)) - 1)

@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
 from scipy.sparse import isspmatrix
+from p_tqdm import p_map
 
 from .causal_network import cmi
 
-def causal_net_dynamics_coupling(adata, genes=None, guide_keys=None, t0_key='spliced', t1_key='velocity', normalize=True, copy=False):
+def causal_net_dynamics_coupling(adata, genes=None, guide_keys=None, t0_key='spliced', t1_key='velocity', normalize=True, copy=False, nthreads=1):
     """Infer causal networks with dynamics-coupled single cells measurements.
     Network inference is a insanely challenging problem which has a long history and that none of the existing algorithms work well.
     However, it's quite possible that one or more of the algorithms could work if only they were given enough data. Single-cell
@@ -73,20 +74,35 @@ def causal_net_dynamics_coupling(adata, genes=None, guide_keys=None, t0_key='spl
 
     causal_net = pd.DataFrame({node_id: [np.nan for i in genes] for node_id in genes}, index=genes)
 
-    for g_a in genes:
-        for g_b in genes:
-            if g_a == g_b:
-                continue
-            else:
-                x_orig = spliced.loc[:, g_a].tolist()
-                y_orig = (spliced.loc[:, g_b] + velocity.loc[:, g_b]).tolist() if t1_key is 'velocity' else spliced.loc[:, g_b].tolist()
-                z_orig = velocity.loc[:, g_b].tolist()
+    def pairwise_combs_mask(a):
+        a=np.array(a)
+        n = len(a)
+        L = n*(n-1)//2
+        out = np.empty((L,2),dtype=a.dtype)
+        m = ~np.tri(len(a),dtype=bool)
+        out[:,0] = np.broadcast_to(a[:,None],(n,n))[m]
+        out[:,1] = np.broadcast_to(a,(n,n))[m]
+        return out
+    
+    interact = pd.DataFrame(pairwise_combs_mask(genes))
+    interact = interact.append(pd.DataFrame({0:interact[1],1:interact[0]}))
+    interact = interact.reset_index(drop=True)
 
-                # input to cmi is a list of list
-                x_orig = [[i] for i in x_orig]
-                y_orig = [[i] for i in y_orig]
-                z_orig = [[i] for i in z_orig]
-                causal_net.loc[g_a, g_b] = cmi(x_orig, y_orig, z_orig)
+    def inference(g_a,g_b):
+        x_orig = spliced.loc[:, g_a].tolist()
+        y_orig = (spliced.loc[:, g_b] + velocity.loc[:, g_b]).tolist() if t1_key == 'velocity' else spliced.loc[:, g_b].tolist()
+        z_orig = velocity.loc[:, g_b].tolist()
+
+        # input to cmi is a list of list
+        x_orig = [[i] for i in x_orig]
+        y_orig = [[i] for i in y_orig]
+        z_orig = [[i] for i in z_orig]
+        return(cmi(x_orig, y_orig, z_orig))
+
+    causal=p_map(inference,interact[0].values.tolist(),interact[1].values.tolist(),num_cpus=nthreads)
+
+    for i in range(0,interact.shape[0]):
+        causal_net.loc[interact.loc[i][0], interact.loc[i][1]] =causal[i]
 
     adata.uns['causal_net'] = causal_net
 
